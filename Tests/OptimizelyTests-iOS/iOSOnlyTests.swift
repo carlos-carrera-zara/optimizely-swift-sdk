@@ -16,8 +16,12 @@
 
 import XCTest
 
+@testable import Optimizely
+
 class iOSOnlyTests: XCTestCase {
 
+    var subject = AtomicProperty<Int>(property: 1)
+    
     override func setUp() {
         // Put setup code here. This method is called before the invocation of each test method in the class.
     }
@@ -29,6 +33,29 @@ class iOSOnlyTests: XCTestCase {
     func testExample() {
         // This is an example of a functional test case.
         // Use XCTAssert and related functions to verify your tests produce the correct results.
+    }
+
+    func test_atomicPropertyDeadlocks() async {
+        let operationQueue = OperationQueue()
+        let expectations = (0..<80).map { id in
+            let expectation = expectation(description: "Queue Test \(id)")
+            operationQueue.addOperation {
+                self.subject.property = (self.subject.property ?? 0) + 1
+                Thread.sleep(forTimeInterval: 0.1)
+                self.subject.property = (self.subject.property ?? 0) + 1
+                expectation.fulfill()
+            }
+            return expectation
+        }
+
+        let finalExpectation = expectation(description: "Final")
+        operationQueue.addBarrierBlock {
+            finalExpectation.fulfill()
+        }
+
+        await fulfillment(of: expectations + CollectionOfOne(finalExpectation), timeout: 10.0)
+
+        self.subject.property = 0
     }
 
 }
